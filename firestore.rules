@@ -4,47 +4,61 @@ service cloud.firestore {
 
     function isSignedIn() { return request.auth != null; }
     function isAdmin() {
-      return isSignedIn() && request.auth.token.email != null &&
+      return isSignedIn() &&
              exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
-    // Waliojisajili: kila mtu anaweza kuandika/kusoma taarifa zake mwenyewe tu.
-    // Admin (email/password) anaweza kusoma orodha nzima kwa ajili ya export.
-    match /users/{uid} {
-      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
-      allow create, update: if isSignedIn() && request.auth.uid == uid;
+    // Wanachama: kitambulisho chao ni NAMBA YA SIMU (siyo password).
+    // Ili "Ingia" ifanye kazi (kutafuta akaunti kwa namba), kila
+    // mwanachama aliyesajiliwa anaruhusiwa kusoma orodha ya wanachama
+    // wengine (majina + hali ya online). Hakuna taarifa nyeti (bank, n.k)
+    // huwekwa hapa, hivyo hii ni sawa kwa biashara ndogo/familia.
+    match /users/{phone} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && !exists(/databases/$(database)/documents/users/$(phone));
+      allow update: if isSignedIn();
       allow delete: if isAdmin();
     }
 
-    // Makala: kila mtu aliyesajiliwa anaweza kusoma; admin pekee anaandika.
     match /posts/{postId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
     }
 
-    // Bidhaa: kila mtu aliyesajiliwa anaweza kusoma; admin pekee anaandika.
     match /products/{productId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
     }
 
-    // Oda: mteja anaweza kuunda oda yake mwenyewe; admin anasoma/anabadilisha zote.
     match /orders/{orderId} {
-      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow create: if isSignedIn();
       allow read, update: if isAdmin();
     }
 
-    // Family chat: kila aliyesajiliwa anaweza kusoma na kutuma ujumbe.
+    // Family chat (kikundi kimoja cha pamoja)
     match /familyChat/{msgId} {
       allow read, create: if isSignedIn();
       allow update, delete: if isAdmin();
     }
 
-    // Hati ya kutambua akaunti za admin (unaziunda mwenyewe Firebase Console,
-    // ukiweka document id = UID ya akaunti ya admin, ndani ya collection "admins").
+    // Maombi ya urafiki (kabla ya kuchat faragha)
+    match /friendRequests/{reqId} {
+      allow read, create, update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // Chat za faragha kati ya wanachama wawili
+    match /privateChats/{chatId} {
+      allow read, write: if isSignedIn();
+      match /messages/{msgId} {
+        allow read, create: if isSignedIn();
+      }
+    }
+
+    // Hati ya kutambua akaunti za admin
     match /admins/{uid} {
       allow read: if isSignedIn();
-      allow write: if false; // badilisha tu kwa mkono kupitia Firebase Console
+      allow write: if false;
     }
   }
 }

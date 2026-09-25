@@ -1,14 +1,28 @@
 /* =========================================================
    XYZ PHARMACY — App logic (member-facing PWA)
-   Uses Firebase Anonymous Auth + a "profile" doc in Firestore
-   (name + phone) so we know who's who without needing SMS OTP.
+   Passwordless identity model: the WhatsApp phone number IS the
+   account (Firestore doc id = phone). Firebase Anonymous Auth
+   runs silently in the background only as a security-rule gate
+   ("isSignedIn()") — it is not the user's identity.
    ========================================================= */
 
-let currentUser = null;   // firebase auth user
-let profile = null;       // {name, phone, uid}
+let currentUser = null;      // firebase anonymous auth user (gate only)
+let profile = null;          // {name, phone, role}
 let cart = JSON.parse(localStorage.getItem('xyz_cart') || '[]');
 let allProducts = [];
+let allPosts = [];
+let allUsers = [];
+let sentRequests = [];
+let receivedRequests = [];
 let unsubChat = null;
+let unsubPrivate = null;
+let heartbeatTimer = null;
+let activeFriendPhone = null;
+
+let postsFirstLoad = true;
+let productsFirstLoad = true;
+let lastSeenPostsTime = Number(localStorage.getItem('xyz_last_seen_posts') || 0);
+let lastSeenProductsTime = Number(localStorage.getItem('xyz_last_seen_products') || 0);
 
 const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
@@ -20,28 +34,28 @@ function toast(msg){
   clearTimeout(toast._h);
   toast._h = setTimeout(()=>t.classList.remove('show'), 2200);
 }
-
-function money(n){
-  return 'TSh ' + Number(n||0).toLocaleString('en-US');
+function money(n){ return 'TSh ' + Number(n||0).toLocaleString('en-US'); }
+function esc(s){ return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function emptyState(emoji, title, sub){ return `<div class="empty-state"><div class="emoji">${emoji}</div><h3>${title}</h3><p>${sub}</p></div>`; }
+function normalizePhone(raw){ return String(raw||'').replace(/[^\d]/g,''); }
+function setBadge(sel, count){
+  const el = $(sel);
+  if(!el) return;
+  if(count > 0){ el.textContent = count > 9 ? '9+' : count; el.style.display = 'flex'; }
+  else el.style.display = 'none';
 }
 
 function saveCart(){
   localStorage.setItem('xyz_cart', JSON.stringify(cart));
   renderCartBadge();
 }
-
 function renderCartBadge(){
   const count = cart.reduce((s,i)=>s+i.qty,0);
-  const badge = $('#cart-badge');
-  if(!badge) return;
-  if(count > 0){ badge.textContent = count; badge.style.display='flex'; }
-  else { badge.style.display='none'; }
+  setBadge('#cart-badge', count);
 }
 
-/* ---------------- AUTH / REGISTRATION ---------------- */
+/* ---------------- AUTH / LOGIN / REGISTER ---------------- */
 
-// Hakikisha kikao (session) kinabaki hai kwenye kifaa hiki (siyo kwa kila
-// kufungua tena), hata baada ya kufunga na kufungua tena browser.
 auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err=>console.error('persistence error', err));
 
 auth.onAuthStateChanged(async (user)=>{
@@ -53,41 +67,109 @@ auth.onAuthStateChanged(async (user)=>{
     return;
   }
   currentUser = user;
-  const doc = await db.collection('users').doc(user.uid).get();
-  if(doc.exists){
-    profile = doc.data();
-    boot();
-  } else {
-    showRegister();
+  const savedPhone = localStorage.getItem('xyz_my_phone');
+  const active = localStorage.getItem('xyz_active') === '1';
+  if(savedPhone && active){
+    try{
+      const doc = await db.collection('users').doc(savedPhone).get();
+      if(doc.exists){
+        profile = doc.data();
+        boot();
+        return;
+      }
+    }catch(err){ console.error(err); }
   }
+  showAuthScreen();
 });
 
-function showRegister(){
+function showAuthScreen(){
   $('#auth-screen').hidden = false;
   $('#app-screen').hidden = true;
 }
 
+function setAuthTab(tab){
+  $$('.auth-tab').forEach(b=>b.classList.toggle('active', b.dataset.authtab === tab));
+  $('#login-phone-form').hidden = tab !== 'login';
+  $('#register-form').hidden = tab !== 'register';
+}
+$$('.auth-tab').forEach(btn=>{
+  btn.addEventListener('click', ()=> setAuthTab(btn.dataset.authtab));
+});
+
+$('#login-phone-form').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const phone = normalizePhone($('#login-phone').value);
+  $('#login-error').textContent = '';
+  if(phone.length < 9){ toast('Weka namba sahihi ya simu'); return; }
+  const btn = e.target.querySelector('button[type=submit]');
+  btn.disabled = true; btn.textContent = 'Inaingia...';
+  try{
+    const doc = await db.collection('users').doc(phone).get();
+    if(!doc.exists){
+      $('#login-error').textContent = 'Namba hii haijasajiliwa bado. Jisajili kwanza.';
+      $('#reg-phone').value = $('#login-phone').value;
+      setAuthTab('register');
+      return;
+    }
+    profile = doc.data();
+    localStorage.setItem('xyz_my_phone', phone);
+    localStorage.setItem('xyz_active', '1');
+    boot();
+  }catch(err){
+    console.error(err);
+    toast('Imeshindikana kuingia, jaribu tena');
+  }finally{
+    btn.disabled = false; btn.textContent = 'Ingia';
+  }
+});
+
 $('#register-form').addEventListener('submit', async (e)=>{
   e.preventDefault();
   const name = $('#reg-name').value.trim();
-  const phone = $('#reg-phone').value.trim();
+  const phone = normalizePhone($('#reg-phone').value);
+  $('#register-error').textContent = '';
   if(!name || phone.length < 9){ toast('Jaza jina na namba sahihi ya simu'); return; }
-  const btn = $('#register-form button[type=submit]');
+  const btn = e.target.querySelector('button[type=submit]');
   btn.disabled = true; btn.textContent = 'Inasajili...';
   try{
-    await db.collection('users').doc(currentUser.uid).set({
+    const existing = await db.collection('users').doc(phone).get();
+    if(existing.exists){
+      $('#register-error').textContent = 'Namba hii tayari imesajiliwa. Tumia "Ingia".';
+      $('#login-phone').value = $('#reg-phone').value;
+      setAuthTab('login');
+      return;
+    }
+    await db.collection('users').doc(phone).set({
       name, phone,
       role: 'member',
-      joinedAt: firebase.firestore.FieldValue.serverTimestamp()
+      joinedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      lastSeen: firebase.firestore.FieldValue.serverTimestamp()
     });
-    profile = { name, phone, role:'member' };
+    profile = { name, phone, role: 'member' };
+    localStorage.setItem('xyz_my_phone', phone);
+    localStorage.setItem('xyz_active', '1');
     boot();
   }catch(err){
     console.error(err);
     toast('Imeshindikana kusajili, jaribu tena');
   }finally{
-    btn.disabled = false; btn.textContent = 'Sajili na Uendelee';
+    btn.disabled = false; btn.textContent = 'Jisajili na Uendelee';
   }
+});
+
+$('#logout-btn')?.addEventListener('click', ()=>{
+  if(heartbeatTimer) clearInterval(heartbeatTimer);
+  if(unsubChat){ unsubChat(); unsubChat = null; }
+  if(unsubPrivate){ unsubPrivate(); unsubPrivate = null; }
+  localStorage.removeItem('xyz_my_phone');
+  localStorage.removeItem('xyz_active');
+  profile = null;
+  $('#login-phone-form')?.reset();
+  $('#register-form')?.reset();
+  setAuthTab('login');
+  $('#app-screen').hidden = true;
+  $('#auth-screen').hidden = false;
+  toast('Umetoka. Karibu tena!');
 });
 
 /* ---------------- BOOT APP ---------------- */
@@ -100,6 +182,9 @@ function boot(){
   renderCartBadge();
   loadPosts();
   loadProducts();
+  watchUsers();
+  watchFriendRequests();
+  startHeartbeat();
   switchTab('home');
 }
 
@@ -112,13 +197,50 @@ $$('.tab').forEach(btn=>{
 function switchTab(tab){
   $$('.view').forEach(v=> v.hidden = v.id !== `view-${tab}`);
   $$('.tab').forEach(b=> b.classList.toggle('active', b.dataset.tab === tab));
+  if(tab === 'home') markPostsSeen();
+  if(tab === 'duka') markProductsSeen();
   if(tab === 'cart') renderCart();
-  if(tab === 'chat') openChat(); else closeChat();
+  if(tab === 'chat'){ showChatSubView('group'); } else { closeChat(); if(unsubPrivate){ unsubPrivate(); unsubPrivate=null; } }
+}
+
+/* ---------------- NOTIFICATIONS (foreground) ---------------- */
+
+function notifyNew(title, body){
+  toast(`${title}: ${body}`);
+  if('Notification' in window && Notification.permission === 'granted'){
+    try{ new Notification(title, { body, icon:'./icons/icon-192.png' }); }catch(e){ console.error(e); }
+  }
+}
+
+$('#notif-btn')?.addEventListener('click', ()=>{
+  if(!('Notification' in window)){ toast('Kivinjari hiki hakitumii arifa'); return; }
+  Notification.requestPermission().then(perm=>{
+    toast(perm === 'granted' ? 'Arifa zimewashwa! 🔔' : 'Umekataa ruhusa ya arifa');
+  });
+});
+
+function markPostsSeen(){
+  const now = Date.now();
+  lastSeenPostsTime = now;
+  localStorage.setItem('xyz_last_seen_posts', String(now));
+  updatePostsBadge();
+}
+function markProductsSeen(){
+  const now = Date.now();
+  lastSeenProductsTime = now;
+  localStorage.setItem('xyz_last_seen_products', String(now));
+  updateProductsBadge();
+}
+function updatePostsBadge(){
+  const unseen = allPosts.filter(p=> p.createdAt && p.createdAt.toMillis() > lastSeenPostsTime).length;
+  setBadge('#posts-badge', unseen);
+}
+function updateProductsBadge(){
+  const unseen = allProducts.filter(p=> p.createdAt && p.createdAt.toMillis() > lastSeenProductsTime).length;
+  setBadge('#products-badge', unseen);
 }
 
 /* ---------------- POSTS (Elimu ya Afya) ---------------- */
-
-let allPosts = [];
 
 function loadPosts(){
   db.collection('posts').orderBy('createdAt','desc').limit(30)
@@ -127,26 +249,32 @@ function loadPosts(){
       const wrap = $('#posts-list');
       if(allPosts.length === 0){
         wrap.innerHTML = emptyState('📰','Bado hakuna makala', 'Admin atakapoongeza elimu ya afya, itaonekana hapa.');
-        return;
+      } else {
+        wrap.innerHTML = allPosts.map(p=>{
+          const date = p.createdAt ? p.createdAt.toDate().toLocaleDateString('sw-TZ',{day:'numeric',month:'short',year:'numeric'}) : '';
+          const isLong = (p.body||'').length > 140;
+          return `
+          <article class="card post-card">
+            ${p.imageUrl ? `<img class="post-img" src="${esc(p.imageUrl)}" alt="">` : ''}
+            <div class="post-body">
+              <span class="post-tag">${esc(p.category||'Elimu ya Afya')}</span>
+              <h3 class="post-title">${esc(p.title)}</h3>
+              <p class="post-excerpt">${esc((p.body||'').slice(0,140))}${isLong?'…':''}</p>
+              ${isLong ? `<button class="read-more-btn" data-post="${p.id}">Soma Zaidi →</button>` : ''}
+              <div class="post-date">${date}</div>
+            </div>
+          </article>`;
+        }).join('');
+        $$('.read-more-btn').forEach(btn=> btn.addEventListener('click', ()=> openPost(btn.dataset.post)));
       }
-      wrap.innerHTML = allPosts.map(p=>{
-        const date = p.createdAt ? p.createdAt.toDate().toLocaleDateString('sw-TZ',{day:'numeric',month:'short',year:'numeric'}) : '';
-        const isLong = (p.body||'').length > 140;
-        return `
-        <article class="card post-card">
-          ${p.imageUrl ? `<img class="post-img" src="${esc(p.imageUrl)}" alt="">` : ''}
-          <div class="post-body">
-            <span class="post-tag">${esc(p.category||'Elimu ya Afya')}</span>
-            <h3 class="post-title">${esc(p.title)}</h3>
-            <p class="post-excerpt">${esc((p.body||'').slice(0,140))}${isLong?'…':''}</p>
-            ${isLong ? `<button class="read-more-btn" data-post="${p.id}">Soma Zaidi →</button>` : ''}
-            <div class="post-date">${date}</div>
-          </div>
-        </article>`;
-      }).join('');
-      $$('.read-more-btn').forEach(btn=>{
-        btn.addEventListener('click', ()=> openPost(btn.dataset.post));
-      });
+      if(!postsFirstLoad){
+        const newest = allPosts[0];
+        if(newest && newest.createdAt && newest.createdAt.toMillis() > lastSeenPostsTime){
+          notifyNew('Makala Mpya ya Afya', newest.title);
+        }
+      }
+      postsFirstLoad = false;
+      updatePostsBadge();
     }, err=>console.error(err));
 }
 
@@ -165,21 +293,12 @@ function openPost(id){
   $('#post-modal').classList.add('open');
   document.body.style.overflow = 'hidden';
 }
-
 function closePost(){
   $('#post-modal').classList.remove('open');
   document.body.style.overflow = '';
 }
 $('#post-modal-close')?.addEventListener('click', closePost);
 $('#post-modal')?.addEventListener('click', (e)=>{ if(e.target.id === 'post-modal') closePost(); });
-
-function emptyState(emoji, title, sub){
-  return `<div class="empty-state"><div class="emoji">${emoji}</div><h3>${title}</h3><p>${sub}</p></div>`;
-}
-
-function esc(s){
-  return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
 
 /* ---------------- PRODUCTS (Duka) ---------------- */
 
@@ -189,6 +308,14 @@ function loadProducts(){
       allProducts = snap.docs.map(d=>({ id:d.id, ...d.data() }));
       renderProductFilters();
       renderProducts();
+      if(!productsFirstLoad){
+        const newest = allProducts[0];
+        if(newest && newest.createdAt && newest.createdAt.toMillis() > lastSeenProductsTime){
+          notifyNew('Bidhaa Mpya Dukani', newest.name);
+        }
+      }
+      productsFirstLoad = false;
+      updateProductsBadge();
     }, err=>console.error(err));
 }
 
@@ -234,9 +361,7 @@ function renderProducts(){
       </div>
     </div>`;
   }).join('');
-  $$('.add-btn').forEach(btn=>{
-    btn.addEventListener('click', ()=> addToCart(btn.dataset.id));
-  });
+  $$('.add-btn').forEach(btn=> btn.addEventListener('click', ()=> addToCart(btn.dataset.id)));
 }
 
 $('#product-search').addEventListener('input', renderProducts);
@@ -322,7 +447,6 @@ Namba: ${profile.phone}`;
       total,
       customerName: profile.name,
       customerPhone: profile.phone,
-      uid: currentUser.uid,
       status: 'mpya',
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
@@ -335,18 +459,35 @@ Namba: ${profile.phone}`;
   renderCart();
 });
 
-/* ---------------- FAMILY CHAT ---------------- */
+/* ---------------- PRESENCE (online/offline heartbeat) ---------------- */
+
+function startHeartbeat(){
+  updateHeartbeat();
+  heartbeatTimer = setInterval(updateHeartbeat, 25000);
+}
+function updateHeartbeat(){
+  if(!profile) return;
+  db.collection('users').doc(profile.phone).update({
+    lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+  }).catch(()=>{});
+}
+function isOnline(user){
+  return !!(user.lastSeen && (Date.now() - user.lastSeen.toMillis()) < 60000);
+}
+
+/* ---------------- FAMILY CHAT (group) ---------------- */
 
 function openChat(){
   const log = $('#chat-log');
   log.innerHTML = '';
+  if(unsubChat) unsubChat();
   unsubChat = db.collection('familyChat').orderBy('createdAt','asc').limitToLast(200)
     .onSnapshot(snap=>{
       log.innerHTML = snap.docs.map(d=>{
         const m = d.data();
-        const mine = m.uid === currentUser.uid;
+        const mine = m.senderPhone === profile.phone;
         return `<div class="msg ${mine?'mine':'theirs'}">
-          <div class="sender">${esc(m.senderName)}</div>
+          ${mine ? '' : `<div class="sender">${esc(m.senderName)}</div>`}
           ${esc(m.text)}
         </div>`;
       }).join('');
@@ -365,9 +506,167 @@ $('#chat-form').addEventListener('submit', async (e)=>{
   input.value = '';
   try{
     await db.collection('familyChat').add({
-      text, senderName: profile.name, uid: currentUser.uid,
+      text, senderName: profile.name, senderPhone: profile.phone,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
+  }catch(err){ console.error(err); toast('Ujumbe haukutumwa'); }
+});
+
+/* ---------------- CHAT SUB-VIEWS (Kikundi / Watu / Private) ---------------- */
+
+$$('.seg-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=> showChatSubView(btn.dataset.chatview));
+});
+
+function showChatSubView(view){
+  $$('.seg-btn').forEach(b=> b.classList.toggle('active', b.dataset.chatview === view || (view==='private' && b.dataset.chatview==='people')));
+  $('#chat-group-view').hidden = view !== 'group';
+  $('#chat-people-view').hidden = view !== 'people';
+  $('#chat-private-view').hidden = view !== 'private';
+  if(view === 'group') openChat(); else closeChat();
+  if(view !== 'private' && unsubPrivate){ unsubPrivate(); unsubPrivate = null; }
+}
+
+/* ---------------- PEOPLE / PRESENCE DIRECTORY ---------------- */
+
+function watchUsers(){
+  db.collection('users').onSnapshot(snap=>{
+    allUsers = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+    renderPeopleList();
+  }, err=>console.error(err));
+}
+
+function watchFriendRequests(){
+  db.collection('friendRequests').where('fromPhone','==', profile.phone).onSnapshot(snap=>{
+    sentRequests = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+    renderPeopleList();
+  }, err=>console.error(err));
+  db.collection('friendRequests').where('toPhone','==', profile.phone).onSnapshot(snap=>{
+    receivedRequests = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+    renderPeopleList();
+    updatePeopleBadge();
+  }, err=>console.error(err));
+}
+
+function updatePeopleBadge(){
+  const count = receivedRequests.filter(r=>r.status==='pending').length;
+  setBadge('#people-badge', count);
+  setBadge('#chat-badge', count);
+}
+
+function getRelationship(otherPhone){
+  const sent = sentRequests.find(r=>r.toPhone===otherPhone);
+  const received = receivedRequests.find(r=>r.fromPhone===otherPhone);
+  if((sent && sent.status==='accepted') || (received && received.status==='accepted')) return 'friends';
+  if(sent && sent.status==='pending') return 'sent';
+  if(received && received.status==='pending') return 'received';
+  return 'none';
+}
+
+function renderPeopleList(){
+  if(!profile) return;
+  const list = $('#people-list');
+  const others = allUsers.filter(u=>u.phone !== profile.phone);
+  if(others.length === 0){
+    list.innerHTML = emptyState('👥','Bado hakuna wanachama wengine','Watakapojisajili, wataonekana hapa.');
+    return;
+  }
+  list.innerHTML = others.map(u=>{
+    const online = isOnline(u);
+    const rel = getRelationship(u.phone);
+    let action = '';
+    if(rel === 'friends') action = `<button class="btn-secondary chat-friend-btn" data-phone="${esc(u.phone)}">Chat</button>`;
+    else if(rel === 'sent') action = `<span class="pill-status new">Ombi Limetumwa</span>`;
+    else if(rel === 'received') action = `<button class="add-btn accept-btn" data-phone="${esc(u.phone)}" style="width:auto; padding:8px 14px">Kubali</button>`;
+    else action = `<button class="btn-secondary friend-request-btn" data-phone="${esc(u.phone)}">+ Ombi</button>`;
+    return `<div class="person-row">
+      <div class="person-avatar">${esc((u.name||'?').charAt(0).toUpperCase())}<span class="dot ${online?'online':'offline'}"></span></div>
+      <div class="person-info">
+        <div class="person-name">${esc(u.name)}</div>
+        <div class="person-status">${online?'🟢 Yupo Online':'⚪ Hayupo Online'}</div>
+      </div>
+      ${action}
+    </div>`;
+  }).join('');
+
+  $$('.friend-request-btn').forEach(b=> b.addEventListener('click', ()=> sendFriendRequest(b.dataset.phone)));
+  $$('.accept-btn').forEach(b=> b.addEventListener('click', ()=> acceptFriendRequest(b.dataset.phone)));
+  $$('.chat-friend-btn').forEach(b=> b.addEventListener('click', ()=> openPrivateChat(b.dataset.phone)));
+}
+
+async function sendFriendRequest(toPhone){
+  const target = allUsers.find(u=>u.phone===toPhone);
+  try{
+    await db.collection('friendRequests').add({
+      fromPhone: profile.phone, fromName: profile.name,
+      toPhone, toName: target ? target.name : '',
+      status: 'pending',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    toast('Ombi la urafiki limetumwa');
+  }catch(err){ console.error(err); toast('Imeshindwa kutuma ombi'); }
+}
+
+async function acceptFriendRequest(fromPhone){
+  const req = receivedRequests.find(r=>r.fromPhone===fromPhone && r.status==='pending');
+  if(!req) return;
+  try{
+    await db.collection('friendRequests').doc(req.id).update({ status:'accepted' });
+    toast('Sasa ni marafiki — unaweza kuchat naye');
+  }catch(err){ console.error(err); toast('Imeshindwa kukubali ombi'); }
+}
+
+/* ---------------- PRIVATE CHAT (1-to-1) ---------------- */
+
+function privateChatId(a, b){ return [a,b].sort().join('__'); }
+
+function openPrivateChat(friendPhone){
+  activeFriendPhone = friendPhone;
+  const friend = allUsers.find(u=>u.phone===friendPhone);
+  $('#private-chat-name').textContent = friend ? friend.name : friendPhone;
+  $('#private-chat-status').textContent = friend && isOnline(friend) ? '🟢 Yupo Online' : '⚪ Hayupo Online';
+  showChatSubView('private');
+
+  const chatId = privateChatId(profile.phone, friendPhone);
+  const log = $('#private-chat-log');
+  log.innerHTML = '';
+  if(unsubPrivate) unsubPrivate();
+  unsubPrivate = db.collection('privateChats').doc(chatId).collection('messages')
+    .orderBy('createdAt','asc').limitToLast(200)
+    .onSnapshot(snap=>{
+      log.innerHTML = snap.docs.map(d=>{
+        const m = d.data();
+        const mine = m.senderPhone === profile.phone;
+        return `<div class="msg ${mine?'mine':'theirs'}">
+          ${mine ? '' : `<div class="sender">${esc(m.senderName)}</div>`}
+          ${esc(m.text)}
+        </div>`;
+      }).join('');
+      log.scrollTop = log.scrollHeight;
+    }, err=>console.error(err));
+}
+
+$('#private-back-btn')?.addEventListener('click', ()=>{
+  if(unsubPrivate){ unsubPrivate(); unsubPrivate = null; }
+  activeFriendPhone = null;
+  showChatSubView('people');
+});
+
+$('#private-chat-form')?.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const input = $('#private-chat-input');
+  const text = input.value.trim();
+  if(!text || !activeFriendPhone) return;
+  input.value = '';
+  const chatId = privateChatId(profile.phone, activeFriendPhone);
+  try{
+    await db.collection('privateChats').doc(chatId).collection('messages').add({
+      text, senderPhone: profile.phone, senderName: profile.name,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    await db.collection('privateChats').doc(chatId).set({
+      participants: [profile.phone, activeFriendPhone]
+    }, { merge:true });
   }catch(err){ console.error(err); toast('Ujumbe haukutumwa'); }
 });
 
