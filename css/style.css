@@ -87,6 +87,28 @@ button{font-family:inherit}
 .post-title{font-size:17px; margin-bottom:4px}
 .post-excerpt{color:var(--ink-soft); font-size:14px; margin:0}
 .post-date{color:var(--ink-soft); font-size:12px; margin-top:8px}
+.read-more-btn{border:none; background:none; color:var(--green-700); font-weight:700; font-size:13px; padding:6px 0 0; cursor:pointer}
+
+/* Post detail modal */
+.post-modal{position:fixed; inset:0; z-index:80; display:none; background:rgba(15,20,16,.55); backdrop-filter:blur(2px)}
+.post-modal.open{display:flex; align-items:flex-end}
+.post-modal-sheet{
+  background:var(--surface); width:100%; max-width:520px; margin:0 auto;
+  max-height:88vh; overflow-y:auto; border-radius:20px 20px 0 0;
+  padding-bottom:calc(20px + var(--safe-bottom)); position:relative;
+  animation:sheet-up .22s ease-out;
+}
+@keyframes sheet-up{ from{ transform:translateY(24px); opacity:.6 } to{ transform:translateY(0); opacity:1 } }
+.post-modal-close{
+  position:absolute; top:14px; right:14px;
+  width:34px; height:34px; border-radius:50%; border:none; background:var(--surface);
+  box-shadow:var(--shadow); font-size:15px; color:var(--ink); z-index:2;
+}
+.post-modal-img{width:100%; aspect-ratio:16/9; object-fit:cover; background:var(--green-100); border-radius:20px 20px 0 0}
+.post-modal-content{padding:18px 22px 4px}
+.post-modal-content:first-child{padding-top:52px}
+.post-modal-title{font-size:22px; margin:10px 0 2px; line-height:1.25}
+.post-modal-text{font-size:15px; line-height:1.7; color:var(--ink); margin-top:16px; white-space:pre-line}
 
 .product-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px}
 .product-card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-m); overflow:hidden; box-shadow:var(--shadow); display:flex; flex-direction:column}

@@ -40,6 +40,10 @@ function renderCartBadge(){
 
 /* ---------------- AUTH / REGISTRATION ---------------- */
 
+// Hakikisha kikao (session) kinabaki hai kwenye kifaa hiki (siyo kwa kila
+// kufungua tena), hata baada ya kufunga na kufungua tena browser.
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err=>console.error('persistence error', err));
+
 auth.onAuthStateChanged(async (user)=>{
   if(!user){
     auth.signInAnonymously().catch(err=>{
@@ -114,30 +118,60 @@ function switchTab(tab){
 
 /* ---------------- POSTS (Elimu ya Afya) ---------------- */
 
+let allPosts = [];
+
 function loadPosts(){
   db.collection('posts').orderBy('createdAt','desc').limit(30)
     .onSnapshot(snap=>{
+      allPosts = snap.docs.map(d=>({ id:d.id, ...d.data() }));
       const wrap = $('#posts-list');
-      if(snap.empty){
+      if(allPosts.length === 0){
         wrap.innerHTML = emptyState('📰','Bado hakuna makala', 'Admin atakapoongeza elimu ya afya, itaonekana hapa.');
         return;
       }
-      wrap.innerHTML = snap.docs.map(d=>{
-        const p = d.data();
+      wrap.innerHTML = allPosts.map(p=>{
         const date = p.createdAt ? p.createdAt.toDate().toLocaleDateString('sw-TZ',{day:'numeric',month:'short',year:'numeric'}) : '';
+        const isLong = (p.body||'').length > 140;
         return `
         <article class="card post-card">
           ${p.imageUrl ? `<img class="post-img" src="${esc(p.imageUrl)}" alt="">` : ''}
           <div class="post-body">
             <span class="post-tag">${esc(p.category||'Elimu ya Afya')}</span>
             <h3 class="post-title">${esc(p.title)}</h3>
-            <p class="post-excerpt">${esc((p.body||'').slice(0,140))}${(p.body||'').length>140?'…':''}</p>
+            <p class="post-excerpt">${esc((p.body||'').slice(0,140))}${isLong?'…':''}</p>
+            ${isLong ? `<button class="read-more-btn" data-post="${p.id}">Soma Zaidi →</button>` : ''}
             <div class="post-date">${date}</div>
           </div>
         </article>`;
       }).join('');
+      $$('.read-more-btn').forEach(btn=>{
+        btn.addEventListener('click', ()=> openPost(btn.dataset.post));
+      });
     }, err=>console.error(err));
 }
+
+function openPost(id){
+  const p = allPosts.find(x=>x.id===id);
+  if(!p) return;
+  const date = p.createdAt ? p.createdAt.toDate().toLocaleDateString('sw-TZ',{day:'numeric',month:'short',year:'numeric'}) : '';
+  $('#post-modal-body').innerHTML = `
+    ${p.imageUrl ? `<img class="post-modal-img" src="${esc(p.imageUrl)}" alt="">` : ''}
+    <div class="post-modal-content">
+      <span class="post-tag">${esc(p.category||'Elimu ya Afya')}</span>
+      <h2 class="post-modal-title">${esc(p.title)}</h2>
+      <div class="post-date">${date}</div>
+      <p class="post-modal-text">${esc(p.body||'').replace(/\n/g,'<br>')}</p>
+    </div>`;
+  $('#post-modal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closePost(){
+  $('#post-modal').classList.remove('open');
+  document.body.style.overflow = '';
+}
+$('#post-modal-close')?.addEventListener('click', closePost);
+$('#post-modal')?.addEventListener('click', (e)=>{ if(e.target.id === 'post-modal') closePost(); });
 
 function emptyState(emoji, title, sub){
   return `<div class="empty-state"><div class="emoji">${emoji}</div><h3>${title}</h3><p>${sub}</p></div>`;
