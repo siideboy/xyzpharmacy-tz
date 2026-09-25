@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="sw">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Admin — XYZ Pharmacy</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="./icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./css/style.css">
+<style>
+  body{background:var(--paper)}
+  .login-wrap{max-width:380px; margin:12vh auto 0; padding:0 18px}
+</style>
+</head>
+<body>
+
+<!-- ============ ADMIN LOGIN ============ -->
+<div id="admin-login" class="login-wrap">
+  <div class="brand" style="justify-content:center; margin-bottom:28px">
+    <div class="brand-mark"></div>
+    <div class="brand-name">XYZ <span>Pharmacy</span> Admin</div>
+  </div>
+  <div class="card" style="padding:24px">
+    <form id="login-form">
+      <div class="field">
+        <label for="login-email">Email ya Admin</label>
+        <input id="login-email" type="email" required>
+      </div>
+      <div class="field">
+        <label for="login-pass">Password</label>
+        <input id="login-pass" type="password" required>
+      </div>
+      <button class="btn-primary" type="submit">Ingia</button>
+    </form>
+    <p class="helper" id="login-error" style="color:#B3432B"></p>
+    <p class="helper">Akaunti ya admin inaundwa Firebase Console > Authentication. Soma README.md.</p>
+  </div>
+</div>
+
+<!-- ============ ADMIN DASHBOARD ============ -->
+<div id="admin-dash" class="admin-shell" hidden>
+  <div class="admin-header">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div class="brand-name">Admin Panel</div>
+    </div>
+    <button class="btn-secondary" id="logout-btn">Toka</button>
+  </div>
+
+  <div class="admin-tabs">
+    <button class="active" data-panel="posts">Makala (Elimu)</button>
+    <button data-panel="products">Bidhaa</button>
+    <button data-panel="orders">Oda</button>
+    <button data-panel="users">Waliojisajili</button>
+  </div>
+
+  <!-- POSTS PANEL -->
+  <div id="panel-posts" class="admin-panel">
+    <div class="card" style="padding:18px; margin-bottom:24px">
+      <h3 style="margin-bottom:14px">Ongeza Makala Mpya</h3>
+      <form id="post-form">
+        <div class="row-flex">
+          <div class="field"><label>Kichwa cha habari</label><input id="post-title" required></div>
+          <div class="field"><label>Kategoria</label><input id="post-category" placeholder="mf. Lishe, Watoto, Malaria"></div>
+        </div>
+        <div class="field"><label>Maudhui</label><textarea id="post-body" required></textarea></div>
+        <div class="field"><label>Picha (JPG/PNG)</label><input id="post-image" type="file" accept="image/*"></div>
+        <button class="btn-primary" type="submit" style="width:auto; padding:12px 24px">Chapisha Makala</button>
+      </form>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th></th><th>Kichwa</th><th>Kategoria</th><th>Tarehe</th><th></th></tr></thead>
+        <tbody id="posts-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- PRODUCTS PANEL -->
+  <div id="panel-products" class="admin-panel" hidden>
+    <div class="card" style="padding:18px; margin-bottom:24px">
+      <h3 style="margin-bottom:14px">Ongeza Bidhaa Moja Moja</h3>
+      <form id="product-form">
+        <div class="row-flex">
+          <div class="field"><label>Jina la bidhaa</label><input id="prod-name" required></div>
+          <div class="field"><label>Bei (TSh)</label><input id="prod-price" type="number" min="0" required></div>
+        </div>
+        <div class="row-flex">
+          <div class="field"><label>Kategoria</label><input id="prod-category" placeholder="mf. Dawa za Maumivu"></div>
+          <div class="field"><label>Idadi Stock</label><input id="prod-stock" type="number" min="0" value="10"></div>
+        </div>
+        <div class="field"><label>Picha ya bidhaa</label><input id="prod-image" type="file" accept="image/*"></div>
+        <button class="btn-primary" type="submit" style="width:auto; padding:12px 24px">Ongeza Bidhaa</button>
+      </form>
+    </div>
+
+    <div class="card" style="padding:18px; margin-bottom:24px">
+      <h3 style="margin-bottom:6px">Pakia Bidhaa kwa Excel (Bulk Upload)</h3>
+      <p class="section-sub">Faili la Excel liwe na columns: <b>name, price, category, stock, imageUrl</b></p>
+      <input id="excel-upload" type="file" accept=".xlsx,.xls,.csv">
+      <div id="excel-status" class="helper"></div>
+    </div>
+
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th></th><th>Jina</th><th>Bei</th><th>Stock</th><th></th></tr></thead>
+        <tbody id="products-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ORDERS PANEL -->
+  <div id="panel-orders" class="admin-panel" hidden>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>Mteja</th><th>Namba</th><th>Bidhaa</th><th>Jumla</th><th>Hali</th><th>Tarehe</th></tr></thead>
+        <tbody id="orders-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- USERS PANEL -->
+  <div id="panel-users" class="admin-panel" hidden>
+    <div class="row-flex" style="justify-content:space-between">
+      <h3 style="margin:0">Waliojisajili (<span id="users-count">0</span>)</h3>
+      <button class="btn-secondary" id="export-users-btn">⬇ Export Excel</button>
+    </div>
+    <div class="table-wrap" style="margin-top:14px">
+      <table class="data-table">
+        <thead><tr><th>Jina</th><th>Namba ya WhatsApp</th><th>Tarehe ya Kujisajili</th></tr></thead>
+        <tbody id="users-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="./js/firebase-config.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="./js/admin.js"></script>
+</body>
+</html>

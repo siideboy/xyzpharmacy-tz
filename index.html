@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="sw">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>XYZ Pharmacy</title>
+<meta name="description" content="Elimu ya afya na duka la bidhaa za pharmacy — XYZ Pharmacy">
+<meta name="theme-color" content="#1B4332">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icons/icon-192.png">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ============ AUTH / REGISTER SCREEN ============ -->
+  <div id="auth-screen" class="view" style="padding:18px">
+    <div class="brand" style="justify-content:center; margin-bottom:6vh; margin-top:8vh">
+      <div class="brand-mark"></div>
+      <div class="brand-name">XYZ <span>Pharmacy</span></div>
+    </div>
+    <div class="card auth-card" style="padding:24px; margin-top:0">
+      <h2 style="margin-bottom:6px">Karibu 👋</h2>
+      <p class="section-sub">Jisajili kwa jina na namba yako ya WhatsApp ili uweze kuona elimu ya afya, bidhaa, na kutuma oda.</p>
+      <form id="register-form">
+        <div class="field">
+          <label for="reg-name">Jina lako kamili</label>
+          <input id="reg-name" type="text" placeholder="mf. Amina Juma" required>
+        </div>
+        <div class="field">
+          <label for="reg-phone">Namba ya WhatsApp</label>
+          <input id="reg-phone" type="tel" placeholder="mf. 0742417963" required>
+        </div>
+        <button type="submit" class="btn-primary">Sajili na Uendelee</button>
+      </form>
+      <p class="helper">Taarifa zako zinatumika tu kuwasiliana kuhusu oda zako.</p>
+    </div>
+  </div>
+
+  <!-- ============ MAIN APP SCREEN ============ -->
+  <div id="app-screen" hidden>
+
+    <div class="topbar">
+      <div class="brand">
+        <div class="brand-mark"></div>
+        <div class="brand-name">XYZ <span>Pharmacy</span></div>
+      </div>
+      <button id="install-btn" class="icon-btn" hidden title="Sakinisha App">
+        <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
+      </button>
+    </div>
+
+    <!-- HOME / POSTS -->
+    <section id="view-home" class="view">
+      <h1 class="section-title">Elimu ya Afya</h1>
+      <p class="section-sub">Makala na vidokezo kutoka kwa XYZ Pharmacy</p>
+      <div id="posts-list"></div>
+    </section>
+
+    <!-- PRODUCTS / DUKA -->
+    <section id="view-duka" class="view" hidden>
+      <h1 class="section-title">Duka</h1>
+      <p class="section-sub">Chagua bidhaa unazohitaji uziweke kikapuni</p>
+      <div class="search-bar">
+        <input id="product-search" type="search" placeholder="Tafuta bidhaa...">
+      </div>
+      <div class="chip-row" id="product-filters"></div>
+      <div class="product-grid" id="product-grid"></div>
+      <div id="product-empty" hidden></div>
+    </section>
+
+    <!-- CART -->
+    <section id="view-cart" class="view" hidden>
+      <h1 class="section-title">Kikapu Chako</h1>
+      <p class="section-sub">Kagua oda yako kabla ya kutuma</p>
+      <div id="cart-list"></div>
+      <div class="cart-summary" id="cart-summary" hidden>
+        <div class="cart-total-row"><span>Jumla</span><span id="cart-total">TSh 0</span></div>
+        <button class="btn-primary" id="checkout-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.5 2 2 6.5 2 12c0 1.9.5 3.7 1.5 5.2L2 22l4.9-1.3C8.3 21.5 10.1 22 12 22c5.5 0 10-4.5 10-10S17.5 2 12 2z" opacity=".25"/><path d="M17.5 14.4c-.3-.1-1.7-.8-1.9-.9-.3-.1-.5-.1-.6.1-.2.3-.7.9-.9 1-.2.2-.3.2-.6.1-.3-.1-1.2-.5-2.3-1.4-.8-.7-1.4-1.6-1.6-1.9-.2-.3 0-.5.1-.6.1-.1.3-.3.4-.5.1-.1.2-.3.2-.4.1-.2 0-.3 0-.5 0-.1-.6-1.5-.8-2-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.5.1-.7.3-.2.3-.9.9-.9 2.1s.9 2.5 1.1 2.7c.1.2 1.9 2.9 4.6 4 .6.3 1.1.4 1.5.5.6.2 1.2.2 1.6.1.5-.1 1.7-.7 1.9-1.4.2-.6.2-1.2.2-1.3-.1-.1-.3-.2-.6-.3z"/></svg>
+          Tuma Oda kwa WhatsApp
+        </button>
+      </div>
+    </section>
+
+    <!-- CHAT -->
+    <section id="view-chat" class="view" hidden style="padding:0">
+      <div class="chat-wrap">
+        <div class="chat-log" id="chat-log"></div>
+        <form id="chat-form" class="chat-input-bar">
+          <input id="chat-input" type="text" placeholder="Andika ujumbe kwa familia..." autocomplete="off">
+          <button type="submit" aria-label="Tuma">➤</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- PROFILE -->
+    <section id="view-profile" class="view" hidden>
+      <h1 class="section-title">Akaunti Yangu</h1>
+      <div class="card" style="padding:20px; margin-top:14px">
+        <div class="field"><label>Jina</label><div id="profile-name" style="font-weight:700"></div></div>
+        <div class="field"><label>Namba ya WhatsApp</label><div id="profile-phone" style="font-weight:700"></div></div>
+      </div>
+      <div class="card" style="padding:18px">
+        <p class="section-sub" style="margin-bottom:6px">Una maswali au tatizo na oda yako?</p>
+        <a href="https://wa.me/255742417963" target="_blank" class="btn-secondary" style="display:block; text-align:center; text-decoration:none">Wasiliana Nasi WhatsApp</a>
+      </div>
+    </section>
+
+    <!-- BOTTOM TAB BAR -->
+    <nav class="tabbar">
+      <button class="tab active" data-tab="home">
+        <svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7M6 10v10h5v-6h2v6h5V10"/></svg>
+        Elimu
+      </button>
+      <button class="tab" data-tab="duka">
+        <svg viewBox="0 0 24 24"><path d="M4 8h16l-1.5 11a2 2 0 01-2 2H7.5a2 2 0 01-2-2L4 8zM8 8V6a4 4 0 018 0v2"/></svg>
+        Duka
+      </button>
+      <button class="tab" data-tab="cart" style="position:relative">
+        <svg viewBox="0 0 24 24"><path d="M3 4h2l2.4 12.4a2 2 0 002 1.6h7.2a2 2 0 002-1.6L20 8H6"/><circle cx="9" cy="20" r="1"/><circle cx="17" cy="20" r="1"/></svg>
+        Kikapu
+        <span id="cart-badge" class="badge" style="display:none; top:2px; right:26%"></span>
+      </button>
+      <button class="tab" data-tab="chat">
+        <svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
+        Family Chat
+      </button>
+      <button class="tab" data-tab="profile">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
+        Akaunti
+      </button>
+    </nav>
+
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="./js/firebase-config.js"></script>
+<script src="./js/app.js"></script>
+</body>
+</html>

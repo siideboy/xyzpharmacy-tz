@@ -1,0 +1,50 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() { return request.auth != null; }
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email != null &&
+             exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Waliojisajili: kila mtu anaweza kuandika/kusoma taarifa zake mwenyewe tu.
+    // Admin (email/password) anaweza kusoma orodha nzima kwa ajili ya export.
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow create, update: if isSignedIn() && request.auth.uid == uid;
+      allow delete: if isAdmin();
+    }
+
+    // Makala: kila mtu aliyesajiliwa anaweza kusoma; admin pekee anaandika.
+    match /posts/{postId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Bidhaa: kila mtu aliyesajiliwa anaweza kusoma; admin pekee anaandika.
+    match /products/{productId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Oda: mteja anaweza kuunda oda yake mwenyewe; admin anasoma/anabadilisha zote.
+    match /orders/{orderId} {
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow read, update: if isAdmin();
+    }
+
+    // Family chat: kila aliyesajiliwa anaweza kusoma na kutuma ujumbe.
+    match /familyChat/{msgId} {
+      allow read, create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // Hati ya kutambua akaunti za admin (unaziunda mwenyewe Firebase Console,
+    // ukiweka document id = UID ya akaunti ya admin, ndani ya collection "admins").
+    match /admins/{uid} {
+      allow read: if isSignedIn();
+      allow write: if false; // badilisha tu kwa mkono kupitia Firebase Console
+    }
+  }
+}
