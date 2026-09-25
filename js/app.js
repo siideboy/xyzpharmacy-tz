@@ -70,14 +70,28 @@ auth.onAuthStateChanged(async (user)=>{
   const savedPhone = localStorage.getItem('xyz_my_phone');
   const active = localStorage.getItem('xyz_active') === '1';
   if(savedPhone && active){
+    // Boot immediately from the locally cached profile so a slow or
+    // temporarily-blocked Firestore read NEVER bounces the person back
+    // to the login screen on refresh.
+    const cached = localStorage.getItem('xyz_profile');
+    if(cached){
+      try{ profile = JSON.parse(cached); boot(); }catch(e){ /* ignore bad cache */ }
+    }
     try{
       const doc = await db.collection('users').doc(savedPhone).get();
       if(doc.exists){
         profile = doc.data();
+        localStorage.setItem('xyz_profile', JSON.stringify(profile));
         boot();
         return;
       }
-    }catch(err){ console.error(err); }
+      if(!cached) showAuthScreen();
+    }catch(err){
+      console.error('profile fetch failed', err);
+      if(!cached) showAuthScreen();
+      // if we already booted from cache above, stay right where we are.
+    }
+    return;
   }
   showAuthScreen();
 });
@@ -114,6 +128,7 @@ $('#login-phone-form').addEventListener('submit', async (e)=>{
     profile = doc.data();
     localStorage.setItem('xyz_my_phone', phone);
     localStorage.setItem('xyz_active', '1');
+    localStorage.setItem('xyz_profile', JSON.stringify(profile));
     boot();
   }catch(err){
     console.error(err);
@@ -148,6 +163,7 @@ $('#register-form').addEventListener('submit', async (e)=>{
     profile = { name, phone, role: 'member' };
     localStorage.setItem('xyz_my_phone', phone);
     localStorage.setItem('xyz_active', '1');
+    localStorage.setItem('xyz_profile', JSON.stringify(profile));
     boot();
   }catch(err){
     console.error(err);
@@ -163,7 +179,9 @@ $('#logout-btn')?.addEventListener('click', ()=>{
   if(unsubPrivate){ unsubPrivate(); unsubPrivate = null; }
   localStorage.removeItem('xyz_my_phone');
   localStorage.removeItem('xyz_active');
+  localStorage.removeItem('xyz_profile');
   profile = null;
+  booted = false;
   $('#login-phone-form')?.reset();
   $('#register-form')?.reset();
   setAuthTab('login');
@@ -174,11 +192,14 @@ $('#logout-btn')?.addEventListener('click', ()=>{
 
 /* ---------------- BOOT APP ---------------- */
 
+let booted = false;
 function boot(){
   $('#auth-screen').hidden = true;
   $('#app-screen').hidden = false;
   $('#profile-name').textContent = profile.name;
   $('#profile-phone').textContent = profile.phone;
+  if(booted) return; // already running listeners/heartbeat; just refreshed the text above
+  booted = true;
   renderCartBadge();
   loadPosts();
   loadProducts();
@@ -282,6 +303,18 @@ function openPost(id){
   const p = allPosts.find(x=>x.id===id);
   if(!p) return;
   const date = p.createdAt ? p.createdAt.toDate().toLocaleDateString('sw-TZ',{day:'numeric',month:'short',year:'numeric'}) : '';
+  const others = allPosts.filter(x=>x.id!==id).slice(0,8);
+  const relatedHtml = others.length ? `
+    <div class="related-posts">
+      <h4 class="related-title">Makala Nyingine</h4>
+      <div class="related-scroll">
+        ${others.map(o=>`
+          <button type="button" class="related-card" data-post="${o.id}">
+            ${o.imageUrl ? `<img src="${esc(o.imageUrl)}" alt="">` : '<div class="related-noimg">📰</div>'}
+            <div class="related-card-title">${esc(o.title)}</div>
+          </button>`).join('')}
+      </div>
+    </div>` : '';
   $('#post-modal-body').innerHTML = `
     ${p.imageUrl ? `<img class="post-modal-img" src="${esc(p.imageUrl)}" alt="">` : ''}
     <div class="post-modal-content">
@@ -289,9 +322,12 @@ function openPost(id){
       <h2 class="post-modal-title">${esc(p.title)}</h2>
       <div class="post-date">${date}</div>
       <p class="post-modal-text">${esc(p.body||'').replace(/\n/g,'<br>')}</p>
+      ${relatedHtml}
     </div>`;
   $('#post-modal').classList.add('open');
+  $('.post-modal-sheet').scrollTop = 0;
   document.body.style.overflow = 'hidden';
+  $$('.related-card').forEach(btn=> btn.addEventListener('click', ()=> openPost(btn.dataset.post)));
 }
 function closePost(){
   $('#post-modal').classList.remove('open');
